@@ -36,48 +36,61 @@ def write_backup(data: list | dict, type: str) -> bool:
 
 
 def copy_likes(ytm: Tuple[YTMusic, YTMusic]):
-    print("Loading liked songs from source account...", end="", flush=True)
-    liked_source = ytm[0].get_playlist("LM", limit=5000)
-    liked_source_ids = functools.reduce(
-        lambda l, i: l + [i["videoId"]], liked_source["tracks"], []
-    )
-
-    print("\rLoading liked songs from destination account...", end="", flush=True)
-    liked_dest = ytm[1].get_playlist("LM", limit=5000)
-    liked_dest_ids = functools.reduce(
-        lambda l, i: l + [i["videoId"]], liked_dest["tracks"], []
-    )
-
-    print("\r" + " " * 50 + "\r", end="", flush=True)
-
-    songs_to_like = list(set(liked_source_ids) - set(liked_dest_ids))
-
-    if len(songs_to_like) < len(liked_source_ids):
-        print(
-            f"Skipping {len(liked_source_ids) - len(songs_to_like)} out of "
-            f"{len(liked_source_ids)} songs liked!"
-        )
-
-    if len(songs_to_like) == 0:
-        print("No songs left to like!")
-        return
-
-    if not prompt_yes_no(f"Add {len(songs_to_like)} songs to likes?"):
-        print("Operation cancelled!")
-        return
-
     try:
-        for index, song in enumerate(songs_to_like):
+        print("Loading liked songs from source account...", end="", flush=True)
+        liked_source = ytm[0].get_playlist("LM", limit=5000)
+        if not liked_source or "tracks" not in liked_source:
+            print("\nError: Could not fetch liked songs from source account")
+            return
+            
+        liked_source_ids = [track["videoId"] for track in liked_source["tracks"] if "videoId" in track]
+        
+        print("\rLoading liked songs from destination account...", end="", flush=True)
+        liked_dest = ytm[1].get_playlist("LM", limit=5000)
+        if not liked_dest or "tracks" not in liked_dest:
+            print("\nError: Could not fetch liked songs from destination account")
+            return
+            
+        liked_dest_ids = [track["videoId"] for track in liked_dest["tracks"] if "videoId" in track]
+        
+        print("\r" + " " * 50 + "\r", end="", flush=True)
+        
+        songs_to_like = list(set(liked_source_ids) - set(liked_dest_ids))
+        
+        if len(songs_to_like) < len(liked_source_ids):
             print(
-                f"\rAdding songs to likes... {index + 1}/{len(songs_to_like)}",
-                end="",
-                flush=True,
+                f"Skipping {len(liked_source_ids) - len(songs_to_like)} out of "
+                f"{len(liked_source_ids)} songs already liked!"
             )
-            ytm[1].rate_song(song, "LIKE")
+        
+        if len(songs_to_like) == 0:
+            print("No songs left to like!")
+            return
+        
+        if not prompt_yes_no(f"Add {len(songs_to_like)} songs to likes?"):
+            print("Operation cancelled!")
+            return
+        
+        success_count = 0
+        for index, song in enumerate(songs_to_like):
+            try:
+                print(
+                    f"\rAdding songs to likes... {index + 1}/{len(songs_to_like)}",
+                    end="",
+                    flush=True,
+                )
+                ytm[1].rate_song(song, "LIKE")
+                success_count += 1
+            except Exception as e:
+                print(f"\nFailed to like song {song}: {str(e)}")
+                
+        if success_count == len(songs_to_like):
+            print("\nTransferred all liked songs successfully!")
+        else:
+            print(f"\nTransferred {success_count} out of {len(songs_to_like)} songs")
+            
     except Exception as e:
-        print("\nFailed to like songs,", e)
-    else:
-        print("\nTransferred all liked songs successfully!")
+        print(f"\nAn error occurred: {str(e)}")
 
 
 def copy_playlist(
@@ -370,49 +383,85 @@ def check_config() -> bool:
     return True
 
 
-def do_auth() -> Tuple[YTMusic, YTMusic] | None:
-    with open(config_filename, "r") as config_file:
-        try:
-            config = json.load(config_file)
-            ytm = None
-            try:
-                ytm = (
-                    YTMusic(json.dumps(config["source_account"]["oauth_headers"])),
-                    YTMusic(json.dumps(config["dest_account"]["oauth_headers"])),
-                )
-            except Exception as e:
-                print("Authentication failed:", e)
-            else:
-                print("Authentication successful!")
-            return ytm
-        except Exception as e:
-            print("Failed to load configuration:", str(e))
-            return None
-
-
 def setup_auth() -> bool:
     print("Set up accounts:")
     config = {
-        "source_account": {"oauth_headers": {}},
-        "dest_account": {"oauth_headers": {}},
+        "source_account": {"headers": {}},
+        "dest_account": {"headers": {}},
     }
 
-    print("Log in with Oauth for source account:")
-    config["source_account"]["oauth_headers"] = ytmusicapi.setup_oauth()
+    source_headers_file = "source_headers.json"
+    dest_headers_file = "dest_headers.json"
 
-    print("Log in with Oauth for destination account:")
-    config["dest_account"]["oauth_headers"] = ytmusicapi.setup_oauth()
-
-    print("Writing configuration file...")
     try:
+        if not os.path.exists(source_headers_file) or not os.path.exists(dest_headers_file):
+            print("\nMissing header files. Please run the following commands:")
+            print("\nFor source account:")
+            print("1. Open YouTube Music in your browser")
+            print("2. Login with your source account")
+            print("3. Press F12 for Developer Tools")
+            print("4. Go to Network tab")
+            print("5. Find any request to music.youtube.com")
+            print("6. Right click -> Copy -> Copy request headers")
+            print("7. Run: python setup_headers.py source_headers.json")
+            print("\nFor destination account:")
+            print("1. Open YouTube Music in an incognito window")
+            print("2. Login with your destination account")
+            print("3. Repeat steps 3-6")
+            print("4. Run: python setup_headers.py dest_headers.json")
+            return False
+
+        # Load the headers
+        with open(source_headers_file) as f:
+            config["source_account"]["headers"] = json.load(f)
+        with open(dest_headers_file) as f:
+            config["dest_account"]["headers"] = json.load(f)
+
+        print("\nWriting configuration file...")
         with open(config_filename, "w") as json_file:
             json.dump(config, json_file, indent=2)
+        return True
     except Exception as e:
-        print("Failed to create config:", str(e))
+        print("Failed to setup authentication:", str(e))
         return False
-    else:
-        print("Configuration created!")
-    return True
+
+
+def do_auth() -> Tuple[YTMusic, YTMusic] | None:
+    try:
+        with open(config_filename, "r") as json_file:
+            config = json.load(json_file)
+            
+        print("Initializing source account...")
+        source_ytm = YTMusic(auth="source_headers.json")
+        
+        print("Initializing destination account...")
+        dest_ytm = YTMusic(auth="dest_headers.json")
+        
+        # Test the authentication by making a simple request
+        try:
+            print("Testing source account connection...")
+            # Get liked songs playlist as a test
+            source_test = source_ytm.get_liked_songs(limit=1)
+            if not source_test:
+                raise Exception("Could not access source account liked songs")
+                
+            print("Testing destination account connection...")
+            dest_test = dest_ytm.get_liked_songs(limit=1)
+            if not dest_test:
+                raise Exception("Could not access destination account liked songs")
+                
+            print("Authentication successful!")
+            return (source_ytm, dest_ytm)
+        except Exception as e:
+            print(f"Failed to verify authentication: {str(e)}")
+            print("Please check that your browser headers are up to date.")
+            print("You may need to recapture the headers using setup_headers.py")
+            return None
+            
+    except Exception as e:
+        print(f"Authentication failed: {str(e)}")
+        print("Please ensure both source_headers.json and dest_headers.json exist and are valid.")
+        return None
 
 
 def main():
