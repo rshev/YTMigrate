@@ -1,2 +1,5 @@
 config.json
 *_backup_*.json
+*secrets.json*
+*headers.json*
+*oauth.json*
