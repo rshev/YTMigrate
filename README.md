@@ -14,7 +14,7 @@ A Python tool to migrate your YouTube Music data (liked songs, playlists) betwee
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/YTMigrate.git
+git clone https://github.com/raedkit/YTMigrate.git
 cd YTMigrate
 ```
 
