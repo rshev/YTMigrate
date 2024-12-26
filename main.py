@@ -35,44 +35,127 @@ def write_backup(data: list | dict, type: str) -> bool:
         return True
 
 
-def copy_likes(ytm: Tuple[YTMusic, YTMusic]):
+def clean_search_term(text: str) -> str:
+    """Remove special characters and normalize text for better search results."""
+    # Characters that could affect search efficiency
+    chars_to_remove = ['&', '(', ')', '[', ']', '{', '}', '"', "'", ',', '/', '\\', '-', '+', '=', '*']
+    cleaned = text
+    for char in chars_to_remove:
+        cleaned = cleaned.replace(char, ' ')
+    # Remove extra whitespace and normalize
+    cleaned = ' '.join(cleaned.split())
+    return cleaned
+
+
+def find_best_match(ytm: YTMusic, title: str, artists: list[str], duration_ms: int = None) -> str | None:
+    """
+    Find the best matching song in YouTube Music.
+    Returns the videoId of the best match, or None if no good match is found.
+    """
+    # Clean the search terms
+    clean_title = clean_search_term(title)
+    clean_artists = [clean_search_term(artist) for artist in artists]
+    search_query = f"{clean_title} {' '.join(clean_artists)}"
+    
     try:
-        print("Loading liked songs from source account...", end="", flush=True)
-        liked_source = ytm[0].get_playlist("LM", limit=5000)
-        if not liked_source or "tracks" not in liked_source:
-            print("\nError: Could not fetch liked songs from source account")
-            return
-        print(f"\rFound {len(liked_source['tracks'])} liked songs in source account")
-        liked_source_ids = [track["videoId"] for track in liked_source["tracks"] if "videoId" in track]
+        # Search for the song
+        results = ytm.search(search_query, filter="songs", limit=5)
+        if not results:
+            return None
+            
+        # Filter and score results
+        best_match = None
+        best_score = -1
         
-        print("\rLoading liked songs from destination account...", end="", flush=True)
-        liked_dest = ytm[1].get_playlist("LM", limit=5000)
-        if not liked_dest or "tracks" not in liked_dest:
-            print("\nError: Could not fetch liked songs from destination account")
-            return
-        print(f"\rFound {len(liked_dest['tracks'])} liked songs in destination account")
-        liked_dest_ids = [track["videoId"] for track in liked_dest["tracks"] if "videoId" in track]
-        
-        # Find songs to copy (in source but not in destination)
-        songs_to_copy = list(set(liked_source_ids) - set(liked_dest_ids))
-        if not songs_to_copy:
-            print("\nNo new songs to copy!")
-            return
-        
-        print(f"\nCopying {len(songs_to_copy)} songs to destination account...")
-        success_count = 0
-        for i, video_id in enumerate(songs_to_copy, 1):
-            try:
-                ytm[1].rate_song(video_id, rating='LIKE')
-                success_count += 1
-                print(f"\rProgress: {i}/{len(songs_to_copy)} songs copied", end="", flush=True)
-            except Exception as e:
-                print(f"\nFailed to copy song {video_id}: {str(e)}")
-        
-        print(f"\nSuccessfully copied {success_count} out of {len(songs_to_copy)} songs")
+        for result in results:
+            # Skip if not a song
+            if result.get('resultType') != 'song' or result.get('category') != 'Songs':
+                continue
+                
+            # Basic score based on title and artist match
+            score = 0
+            result_title = clean_search_term(result.get('title', ''))
+            result_artists = [clean_search_term(artist.get('name', '')) for artist in result.get('artists', [])]
+            
+            # Title similarity (using lower case for better matching)
+            if clean_title.lower() == result_title.lower():
+                score += 3
+            elif clean_title.lower() in result_title.lower() or result_title.lower() in clean_title.lower():
+                score += 1
+                
+            # Artist similarity
+            for artist in clean_artists:
+                for result_artist in result_artists:
+                    if artist.lower() == result_artist.lower():
+                        score += 2
+                    elif artist.lower() in result_artist.lower() or result_artist.lower() in artist.lower():
+                        score += 1
+                        
+            # Prefer higher quality versions
+            if 'isAvailable' in result and result['isAvailable']:
+                score += 1
+                
+            # Update best match if this result has a higher score
+            if score > best_score:
+                best_score = score
+                best_match = result.get('videoId')
+                
+        return best_match if best_score >= 2 else None  # Require minimum score for match
         
     except Exception as e:
-        print(f"Error copying likes: {str(e)}")
+        print(f"Error searching for {title}: {str(e)}")
+        return None
+
+
+def copy_likes(ytm: Tuple[YTMusic, YTMusic]):
+    try:
+        print("\nGetting liked songs from source account...")
+        liked_songs = ytm[0].get_liked_songs(limit=None)
+        if not liked_songs or 'tracks' not in liked_songs:
+            print("No liked songs found in source account")
+            return
+            
+        total = len(liked_songs['tracks'])
+        print(f"Found {total} liked songs")
+        
+        success = 0
+        skipped = 0
+        failed = 0
+        
+        for i, track in enumerate(liked_songs['tracks'], 1):
+            try:
+                title = track.get('title', '')
+                artists = [artist.get('name', '') for artist in track.get('artists', [])]
+                duration = track.get('duration_seconds', 0) * 1000  # Convert to ms
+                
+                print(f"\n[{i}/{total}] Processing: {title} by {', '.join(artists)}")
+                
+                # Find the best matching song in destination account
+                best_match_id = find_best_match(ytm[1], title, artists, duration)
+                
+                if best_match_id:
+                    try:
+                        ytm[1].rate_song(best_match_id, rating='LIKE')
+                        success += 1
+                        print(f"✓ Successfully liked the song")
+                    except Exception as e:
+                        print(f"✗ Failed to like the song: {str(e)}")
+                        failed += 1
+                else:
+                    print("✗ Could not find a good match for this song")
+                    skipped += 1
+                    
+            except Exception as e:
+                print(f"✗ Error processing track: {str(e)}")
+                failed += 1
+                
+        print(f"\nFinished copying likes:")
+        print(f"Success: {success}")
+        print(f"Skipped: {skipped}")
+        print(f"Failed: {failed}")
+        
+    except Exception as e:
+        print(f"Failed to copy likes: {str(e)}")
 
 
 def copy_playlist(
