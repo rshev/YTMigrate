@@ -114,6 +114,8 @@ def copy_likes(ytm: Tuple[YTMusic, YTMusic]):
         if not liked_songs or 'tracks' not in liked_songs:
             print("No liked songs found in source account")
             return
+
+        liked_songs['tracks'] = list(reversed(liked_songs['tracks']))
             
         total = len(liked_songs['tracks'])
         print(f"Found {total} liked songs")

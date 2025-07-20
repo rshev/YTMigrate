@@ -13,12 +13,14 @@ A Python tool to migrate your YouTube Music data (liked songs, playlists) betwee
 ### Installation
 
 1. Clone the repository:
+
 ```bash
 git clone https://github.com/raedkit/YTMigrate.git
 cd YTMigrate
 ```
 
 2. Create and activate a virtual environment:
+
 ```bash
 # On macOS/Linux
 python3 -m venv venv
@@ -30,6 +32,7 @@ python -m venv venv
 ```
 
 3. Install dependencies:
+
 ```bash
 pip install -r requirements.txt
 ```
@@ -41,6 +44,7 @@ YTMigrate supports two authentication methods:
 ### Method 1: OAuth Authentication (Recommended)
 
 1. Set up OAuth credentials:
+
    - Go to [Google Cloud Console](https://console.cloud.google.com)
    - Create a new project or select an existing one
    - Enable the YouTube Data API v3
@@ -49,6 +53,7 @@ YTMigrate supports two authentication methods:
    - Download the client secrets file and save it as `client_secrets.json` in the project directory
 
 2. Set up authentication for both accounts:
+
 ```bash
 # For source account
 python setup_oauth.py client_secrets.json source_oauth.json
@@ -62,6 +67,7 @@ python setup_oauth.py client_secrets.json dest_oauth.json
 If OAuth setup is not possible, you can use browser headers:
 
 1. Set up authentication for both accounts:
+
 ```bash
 # For source account
 python setup_headers.py source_headers.json
@@ -81,11 +87,13 @@ python setup_headers.py dest_headers.json
 ## Usage
 
 After setting up authentication, run the main script:
+
 ```bash
 python main.py
 ```
 
 The script will:
+
 1. Authenticate with both accounts
 2. Load liked songs from the source account
 3. Copy any songs that aren't already liked in the destination account
@@ -93,14 +101,17 @@ The script will:
 ## Troubleshooting
 
 ### OAuth Issues
+
 - Make sure the YouTube Data API v3 is enabled in your Google Cloud Project
 - Verify that your OAuth consent screen is properly configured
 - Check that you're using the correct Google accounts when authorizing
 
 ### Headers Issues
+
 - Ensure you're copying the full headers from a recent request
 - Try logging out and back in to YouTube Music before copying headers
 - Make sure you're using different browsers/incognito mode for each account
+- Read `ytmusicapi` headers authentication [documentation](https://ytmusicapi.readthedocs.io/en/stable/setup/browser.html)
 
 ## Contributing
 
